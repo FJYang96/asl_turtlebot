@@ -70,6 +70,9 @@ class Detector:
         self.laser_ranges = []
         self.laser_angle_increment = 0.01 # this gets updated
 
+        # food name
+        self.food_name = ['stop sign', 'banana', 'apple', 'sandwish', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake']
+
         self.object_publishers = {}
         self.object_labels = load_object_labels(PATH_TO_LABELS)
 

@@ -63,6 +63,9 @@ class Supervisor:
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
         # subscribers
+        # Self edited, camera inforation
+        self.focal_length = 1.
+        rospy.Subscriber('/camera/camera_info', CameraInfo, self.camera_info_callback)
         # stop sign detector
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
         # high-level navigation pose
@@ -112,12 +115,17 @@ class Supervisor:
         self.theta_g = msg.theta
         self.mode = Mode.NAV
 
+    def camera_info_callback(self, msg):
+        self.focal_length = msg.K[4]
+
     def stop_sign_detected_callback(self, msg):
         """ callback for when the detector has found a stop sign. Note that
         a distance of 0 can mean that the lidar did not pickup the stop sign at all """
 
         # distance of the stop sign
-        dist = msg.distance
+        # dist = msg.distance
+
+        dist = self.focal_length * 0.09 / (msg.corners[2]-msg.corners[0])
 
         # if close enough and in nav mode, stop
         if dist > 0 and dist < STOP_MIN_DIST and self.mode == Mode.NAV:
@@ -147,6 +155,8 @@ class Supervisor:
         """ sends zero velocity to stay put """
 
         vel_g_msg = Twist()
+        vel_g_msg.linear.x = 0.; vel_g_msg.linear.y = 0.; vel_g_msg.linear.z = 0
+        vel_g_msg.angular.x = 0.; vel_g_msg.angular.y = 0.; vel_g_msg.angular.z = 0.
         self.cmd_vel_publisher.publish(vel_g_msg)
 
     def close_to(self,x,y,theta):
@@ -211,10 +221,9 @@ class Supervisor:
 
         elif self.mode == Mode.STOP:
             # at a stop sign
+            self.stay_idle()
             if self.has_stopped():
                 self.init_crossing()
-            else:
-                pass
 
         elif self.mode == Mode.CROSS:
             # crossing an intersection
