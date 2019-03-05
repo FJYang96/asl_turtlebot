@@ -88,5 +88,9 @@ CMAkeLists.txt: Make file for the package
 
 **Robot Run Instruction:**
 
-First run `~/launch/turtlebot3_bringup_jetson_pi.launch`
-Then run `~/launch/project_pose.launch`
+First run `~/launch/turtlebot3_bringup_jetson_pi.launch`, then run `~/launch/project_pose.launch`.
+
+To test Turtlebot with stop sign detection/stopping: first run `supervisor.py`, then run `rostb3`, then run `supervisor.py` and `nav_pose` command like in homework 2 <br/>
+supervisor.py line 68 we need to use `"/cmd_nav"`<br/>
+nav: higher level navigation/motion planning <br/>
+pose: path tracker/follower <br/>
