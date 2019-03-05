@@ -85,3 +85,8 @@ tfmodels/coco_labels.txt, stop_sign_gazebo.pb, ssd_mobilenet_v1_coco.pb: Pre-tra
 roslocal.sh, rostb3.sh: Scripts to set your ROS IP settings.
 
 CMAkeLists.txt: Make file for the package
+
+**Robot Run Instruction:**
+
+First run `~/launch/turtlebot3_bringup_jetson_pi.launch`
+Then run `~/launch/project_pose.launch`
