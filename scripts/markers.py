@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 
 import rospy
+import math
 import numpy as np
 import tf
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Quaternion, Pose, Point, Pose2D, PoseStamped
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import CompressedImage, Image, CameraInfo, LaserScan
 from asl_turtlebot.msg import DetectedObjectList
 from std_msgs.msg import Header, ColorRGBA, Float32MultiArray
 
-use_gazebo = rospy.get_param("sim")
 mapping = rospy.get_param("map")
 
 class MultipleMarkers:
@@ -21,6 +21,8 @@ class MultipleMarkers:
 
         self.x_g, self.y_g, self.theta_g = None, None, None
         self.x, self.y, self.theta = None, None, None
+        self.cx, self.cy, self.fx, self.fy = 1., 1., 1., 1.
+        self.ymin, self.ymax, self.xmin, self.xmax = 1., 1., 1., 1.
         self.goal_pose_received = False
         self.puddle_detected = False
         self.obj_detected = False
@@ -34,27 +36,10 @@ class MultipleMarkers:
         self.detect_obj_pub = rospy.Publisher('detect_obj_FOV', Marker, queue_size = 10)
 #        self.detect_puddle_pub = rospy.Publisher('detected_puddle', Marker, queue_size = 10)
 
-        if use_gazebo:
-            rospy.Subscriber('/gazebo/model_states', ModelStates, self.gazebo_callback)
-
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
         rospy.Subscriber('/raspicam_node/camera_info', CameraInfo, self.camera_info_callback)
         rospy.Subscriber('/detector/objects', DetectedObjectList, self.detect_obj_callback)
 #        rospy.Subscriber('/puddle_center', Float32MultiArray, self.puddle_callback)
-
-    def gazebo_callback(self, data):
-        if "turtlebot3_burger" in data.name:
-            pose = data.pose[data.name.index("turtlebot3_burger")]
-            twist = data.twist[data.name.index("turtlebot3_burger")]
-            self.x = pose.position.x
-            self.y = pose.position.y
-            quaternion = (
-                pose.orientation.x,
-                pose.orientation.y,
-                pose.orientation.z,
-                pose.orientation.w)
-            euler = tf.transformations.euler_from_quaternion(quaternion)
-            self.theta = euler[2]
 
     def rviz_goal_callback(self, msg):
         """ callback for a pose goal sent through rviz """
@@ -85,11 +70,17 @@ class MultipleMarkers:
     def detect_obj_callback(self, msg):
         if len(msg.ob_msgs) > 0:
             [ymin, xmin, ymax, xmax] = msg.ob_msgs[-1].corners
-            self.down_left = project_pixel_to_ray(xmin, ymin)
-            self.down_right = project_pixel_to_ray(xmax, ymin)
-            self.up_left = project_pixel_to_ray(xmin, ymax)
-            self.up_right = project_pixel_to_ray(xmax, ymax)
+            self.down_left = self.project_pixel_to_ray(xmin, ymin)
+            self.down_right = self.project_pixel_to_ray(xmax, ymin)
+            self.up_left = self.project_pixel_to_ray(xmin, ymax)
+            self.up_right = self.project_pixel_to_ray(xmax, ymax)
             self.obj_detected = True
+
+            rospy.loginfo(self.down_left)
+            rospy.loginfo(self.down_right)
+            rospy.loginfo(self.up_left)
+            rospy.loginfo(self.up_right)
+            rospy.loginfo('************************')
 
 #    def puddle_callback(self, msg):
 #        self.puddle_ct_x, self.puddle_ct_y = msg.data
@@ -97,45 +88,28 @@ class MultipleMarkers:
 
     def project_pixel_to_ray(self,u,v):
         x = (u - self.cx)/self.fx
-        y = (v - self.cy)/self.fy
+        y = (v)/self.fy
         norm = math.sqrt(x*x + y*y + 1)
         x /= norm
         y /= norm
-        z = 1.0 / norm
 
-        return (1.5 * x, 1.5 * y,z)
+        return (1.5 * x, 1.5 * y)
 
     def loop(self):
-#        if not use_gazebo:
-#            try:
-#                (translation,rotation) = self.footprint_listener.lookupTransform('/map', '/base_footprint', rospy.Time(0))
-#            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-#                pass
         
         # Turtlebot3 Marker
         tb3_marker = Marker()
         tb3_marker.header.frame_id = "/base_footprint"
-        tb3_marker.header.stamp = rospy.Time.now()
+        tb3_marker.header.stamp = rospy.Time(0)
         tb3_marker.ns = "tb3_cylinder"
         tb3_marker.action = tb3_marker.ADD
         tb3_marker.type = tb3_marker.CYLINDER
-        if not use_gazebo:
-            try:
-                (translation,rotation) = self.footprint_listener.lookupTransform('/map', '/base_footprint', rospy.Time(0))
-                tb3_marker.pose.orientation.x = rotation[0]
-                tb3_marker.pose.orientation.y = rotation[1]
-                tb3_marker.pose.orientation.z = rotation[2]
-                tb3_marker.pose.orientation.w = rotation[3]
-                tb3_marker.pose.position.x = translation[0]
-                tb3_marker.pose.position.y = translation[1]
-            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-                pass
         tb3_marker.scale.x = 0.15
         tb3_marker.scale.y = 0.15
         tb3_marker.scale.z = 0.15
         tb3_marker.color.a = 1.0
         tb3_marker.color.b = 1.0
-        tb3_marker.frame_locked = True
+        tb3_marker.frame_locked = False
         tb3_marker.lifetime = rospy.Duration()
         self.tb3_pub.publish(tb3_marker)
 
@@ -146,58 +120,36 @@ class MultipleMarkers:
         fov_marker.ns = "raspicam_FOV"
         fov_marker.action = fov_marker.ADD
         fov_marker.type = fov_marker.LINE_LIST
-        if not use_gazebo:
-            try:
-                (translation,rotation) = self.footprint_listener.lookupTransform('/map', '/base_footprint', rospy.Time(0))
-                tb3_marker.pose.orientation.x = rotation[0]
-                tb3_marker.pose.orientation.y = rotation[1]
-                tb3_marker.pose.orientation.z = rotation[2]
-                tb3_marker.pose.orientation.w = rotation[3]
-                tb3_marker.pose.position.x = translation[0]
-                tb3_marker.pose.position.y = translation[1]
-            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-                pass
         fov_marker.scale.x = 0.01
         fov_marker.color.g = 1.0
         fov_marker.color.a = 1.0
 
         # set of points
-        p1, p2, p3, p4, p5, p6, p7, p8 = Point(), Point(), Point(), Point(), Point(), Point(), Point(), Point()
-        p9, p10, p11, p12 = Point(), Point(), Point(), Point()
-        p13, p14, p15, p16 = Point(), Point(), Point(), Point()
+
+        p1, p2, p3, p4, p5 = Point(), Point(), Point(), Point(), Point()
         p1.x, p1.y, p1.z = 0., 0., .09
         p2.x, p2.y, p2.z = 1.5, 0.9, 0.
-        p3.x, p3.y, p3.z = 0., 0., 0.09
-        p4.x, p4.y, p4.z = 1.5, -0.9, 0.
-        p5.x, p5.y, p5.z = 0., 0., 0.09
-        p6.x, p6.y, p6.z = 1.5, 0.9, 0.77
-        p7.x, p7.y, p7.z = 0., 0., 0.09
-        p8.x, p8.y, p8.z = 1.5, -0.9, 0.77
-        p9.x, p9.y, p9.z = 1.5, 0.9, 0.
-        p10.x, p10.y, p10.z = 1.5, -0.9, 0.
-        p11.x, p11.y, p11.z = 1.5, -0.9, 0.
-        p12.x, p12.y, p12.z = 1.5, -0.9, 0.77
-        p13.x, p13.y, p13.z = 1.5, -0.9, 0.77
-        p14.x, p14.y, p14.z = 1.5, 0.9, 0.77
-        p15.x, p15.y, p15.z = 1.5, 0.9, 0.77
-        p16.x, p16.y, p16.z = 1.5, 0.9, 0.
+        p3.x, p3.y, p3.z = 1.5, -0.9, 0.
+        p4.x, p4.y, p4.z = 1.5, 0.9, 0.77
+        p5.x, p5.y, p5.z = 1.5, -0.9, 0.77
 
         fov_marker.points.append(p1)
         fov_marker.points.append(p2)
+        fov_marker.points.append(p1)
         fov_marker.points.append(p3)
+        fov_marker.points.append(p1)
+        fov_marker.points.append(p4)
+        fov_marker.points.append(p1)
+        fov_marker.points.append(p5)
+        fov_marker.points.append(p2)
+        fov_marker.points.append(p3)
+        fov_marker.points.append(p2)
+        fov_marker.points.append(p4)
+        fov_marker.points.append(p3)
+        fov_marker.points.append(p5)
         fov_marker.points.append(p4)
         fov_marker.points.append(p5)
-        fov_marker.points.append(p6)
-        fov_marker.points.append(p7)
-        fov_marker.points.append(p8)
-        fov_marker.points.append(p9)
-        fov_marker.points.append(p10)
-        fov_marker.points.append(p11)
-        fov_marker.points.append(p12)
-        fov_marker.points.append(p13)
-        fov_marker.points.append(p14)
-        fov_marker.points.append(p15)
-        fov_marker.points.append(p16)
+
         fov_marker.frame_locked = True
         fov_marker.lifetime = rospy.Duration()
         self.fov_pub.publish(fov_marker)
@@ -230,7 +182,7 @@ class MultipleMarkers:
             self.obj_detected = False
             obj_marker = Marker()
             obj_marker.header.frame_id = "/base_footprint"
-            obj_marker.header.stamp = rospy.Time.now()
+            obj_marker.header.stamp = rospy.Time(0)
             obj_marker.ns = "detected_obj"
             obj_marker.action = fov_marker.ADD
             obj_marker.type = fov_marker.LINE_LIST
@@ -243,21 +195,22 @@ class MultipleMarkers:
             op9, op10, op11, op12 = Point(), Point(), Point(), Point()
             op13, op14, op15, op16 = Point(), Point(), Point(), Point()
             op1.x, op1.y, op1.z = 0., 0., .09
-            op2.x, op2.y, op2.z = 1.5, self.down_left[0], self.down_left[1]
+            op2.x, op2.y, op2.z = 1.5, 1.8 - self.down_left[0], self.down_left[1]
             op3.x, op3.y, op3.z = 0., 0., 0.09
-            op4.x, op4.y, op4.z = 1.5, self.down_right[0], self.down_right[1]
+            op4.x, op4.y, op4.z = 1.5, 1.8 - self.down_right[0], self.down_right[1]
             op5.x, op5.y, op5.z = 0., 0., 0.09
-            op6.x, op6.y, op6.z = 1.5, self.up_left[0], self.up_left[1]
+            op6.x, op6.y, op6.z = 1.5, 1.8 - self.up_left[0], self.up_left[1]
             op7.x, op7.y, op7.z = 0., 0., 0.09
-            op8.x, op8.y, op8.z = 1.5, self.up_right[0], self.up_right[1]
-            op9.x, op9.y, op9.z = 1.5, self.down_left[0], self.down_left[1]
-            op10.x, op10.y, op10.z = 1.5, self.down_right[0], self.down_right[1]
-            op11.x, op11.y, op11.z = 1.5, self.down_right[0], self.down_right[1]
-            op12.x, op12.y, op12.z = 1.5, self.up_right[0], self.up_right[1]
-            op13.x, op13.y, op13.z = 1.5, self.up_right[0], self.up_right[1]
-            op14.x, op14.y, op14.z = 1.5, self.up_left[0], self.up_left[1]
-            op15.x, op15.y, op15.z = 1.5, self.up_left[0], self.up_left[1]
-            op16.x, op16.y, op16.z = 1.5, self.down_left[0], self.down_left[1]
+            op8.x, op8.y, op8.z = 1.5, 1.8 - self.up_right[0], self.up_right[1]
+
+            op9.x, op9.y, op9.z = 1.5, 1.8 - self.down_left[0], self.down_left[1]
+            op10.x, op10.y, op10.z = 1.5, 1.8 - self.down_right[0], self.down_right[1]
+            op11.x, op11.y, op11.z = 1.5, 1.8 - self.down_right[0], self.down_right[1]
+            op12.x, op12.y, op12.z = 1.5, 1.8 - self.up_right[0], self.up_right[1]
+            op13.x, op13.y, op13.z = 1.5, 1.8 - self.up_right[0], self.up_right[1]
+            op14.x, op14.y, op14.z = 1.5, 1.8 - self.up_left[0], self.up_left[1]
+            op15.x, op15.y, op15.z = 1.5, 1.8 - self.up_left[0], self.up_left[1]
+            op16.x, op16.y, op16.z = 1.5, 1.8 - self.down_left[0], self.down_left[1]
 
             obj_marker.points.append(op1)
             obj_marker.points.append(op2)
