@@ -26,6 +26,7 @@ class MultipleMarkers:
         self.goal_pose_received = False
         self.puddle_detected = False
         self.obj_detected = False
+        self.image_plane_dis = 1.0
         self.rviz_listener = tf.TransformListener()
         self.footprint_listener = tf.TransformListener()
         self.down_left, self.down_right, self.up_left, self.up_right = None, None, None, None
@@ -37,7 +38,7 @@ class MultipleMarkers:
 #        self.detect_puddle_pub = rospy.Publisher('detected_puddle', Marker, queue_size = 10)
 
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
-        rospy.Subscriber('/raspicam_node/camera_info', CameraInfo, self.camera_info_callback)
+        rospy.Subscriber('/camera_relay/camera_info', CameraInfo, self.camera_info_callback)
         rospy.Subscriber('/detector/objects', DetectedObjectList, self.detect_obj_callback)
 #        rospy.Subscriber('/puddle_center', Float32MultiArray, self.puddle_callback)
 
@@ -62,6 +63,7 @@ class MultipleMarkers:
             pass
 
     def camera_info_callback(self, msg):
+        rospy.loginfo("camera_info_callback")
         self.cx = msg.P[2]
         self.cy = msg.P[6]
         self.fx = msg.P[0]
@@ -76,11 +78,11 @@ class MultipleMarkers:
             self.up_right = self.project_pixel_to_ray(xmax, ymax)
             self.obj_detected = True
 
-            rospy.loginfo(self.down_left)
-            rospy.loginfo(self.down_right)
-            rospy.loginfo(self.up_left)
-            rospy.loginfo(self.up_right)
-            rospy.loginfo('************************')
+#            rospy.loginfo(self.down_left)
+#            rospy.loginfo(self.down_right)
+#            rospy.loginfo(self.up_left)
+#            rospy.loginfo(self.up_right)
+#            rospy.loginfo('************************')
 
 #    def puddle_callback(self, msg):
 #        self.puddle_ct_x, self.puddle_ct_y = msg.data
@@ -88,12 +90,19 @@ class MultipleMarkers:
 
     def project_pixel_to_ray(self,u,v):
         x = (u - self.cx)/self.fx
-        y = (v)/self.fy
+        y = (v - self.cy)/self.fy
         norm = math.sqrt(x*x + y*y + 1)
+#        rospy.loginfo(u)
+#        rospy.loginfo(self.cx)
+#        rospy.loginfo(self.fx)
+#        rospy.loginfo('************************')
         x /= norm
         y /= norm
+        z = 1.0 / norm
 
-        return (1.5 * x, 1.5 * y)
+        y, z = -self.image_plane_dis * x, 0.09 - self.image_plane_dis * y
+
+        return (y,z)
 
     def loop(self):
         
@@ -195,22 +204,22 @@ class MultipleMarkers:
             op9, op10, op11, op12 = Point(), Point(), Point(), Point()
             op13, op14, op15, op16 = Point(), Point(), Point(), Point()
             op1.x, op1.y, op1.z = 0., 0., .09
-            op2.x, op2.y, op2.z = 1.5, 1.8 - self.down_left[0], self.down_left[1]
+            op2.x, op2.y, op2.z = 1.5, self.down_left[0], self.down_left[1]
             op3.x, op3.y, op3.z = 0., 0., 0.09
-            op4.x, op4.y, op4.z = 1.5, 1.8 - self.down_right[0], self.down_right[1]
+            op4.x, op4.y, op4.z = 1.5, self.down_right[0], self.down_right[1]
             op5.x, op5.y, op5.z = 0., 0., 0.09
-            op6.x, op6.y, op6.z = 1.5, 1.8 - self.up_left[0], self.up_left[1]
+            op6.x, op6.y, op6.z = 1.5, self.up_left[0], self.up_left[1]
             op7.x, op7.y, op7.z = 0., 0., 0.09
-            op8.x, op8.y, op8.z = 1.5, 1.8 - self.up_right[0], self.up_right[1]
+            op8.x, op8.y, op8.z = 1.5, self.up_right[0], self.up_right[1]
 
-            op9.x, op9.y, op9.z = 1.5, 1.8 - self.down_left[0], self.down_left[1]
-            op10.x, op10.y, op10.z = 1.5, 1.8 - self.down_right[0], self.down_right[1]
-            op11.x, op11.y, op11.z = 1.5, 1.8 - self.down_right[0], self.down_right[1]
-            op12.x, op12.y, op12.z = 1.5, 1.8 - self.up_right[0], self.up_right[1]
-            op13.x, op13.y, op13.z = 1.5, 1.8 - self.up_right[0], self.up_right[1]
-            op14.x, op14.y, op14.z = 1.5, 1.8 - self.up_left[0], self.up_left[1]
-            op15.x, op15.y, op15.z = 1.5, 1.8 - self.up_left[0], self.up_left[1]
-            op16.x, op16.y, op16.z = 1.5, 1.8 - self.down_left[0], self.down_left[1]
+            op9.x, op9.y, op9.z = 1.5, self.down_left[0], self.down_left[1]
+            op10.x, op10.y, op10.z = 1.5, self.down_right[0], self.down_right[1]
+            op11.x, op11.y, op11.z = 1.5, self.down_right[0], self.down_right[1]
+            op12.x, op12.y, op12.z = 1.5, self.up_right[0], self.up_right[1]
+            op13.x, op13.y, op13.z = 1.5, self.up_right[0], self.up_right[1]
+            op14.x, op14.y, op14.z = 1.5, self.up_left[0], self.up_left[1]
+            op15.x, op15.y, op15.z = 1.5, self.up_left[0], self.up_left[1]
+            op16.x, op16.y, op16.z = 1.5, self.down_left[0], self.down_left[1]
 
             obj_marker.points.append(op1)
             obj_marker.points.append(op2)
