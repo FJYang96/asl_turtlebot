@@ -13,14 +13,14 @@ import cv2
 import math
 
 # path to the trained conv net
-PATH_TO_MODEL = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../tfmodels/ssd_mobilenet_v1_coco.pb')
+PATH_TO_MODEL = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../tfmodels/ssd_resnet_50_fpn_coco.pb')
 PATH_TO_LABELS = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../tfmodels/coco_labels.txt')
 
 # set to True to use tensorflow and a conv net
 # False will use a very simple color thresholding to detect stop signs only
 USE_TF = True
 # minimum score for positive detection
-MIN_SCORE = .4
+MIN_SCORE = .5
 
 def load_object_labels(filename):
     """ loads the coco object readable name """
@@ -70,15 +70,13 @@ class Detector:
         self.laser_ranges = []
         self.laser_angle_increment = 0.01 # this gets updated
 
-        # food name
-        #self.food_name = ['stop_sign', 'banana', 'apple', 'sandwish', 'orange', 'broccoli', 'carrot', 'hot_dog', 'pizza', 'donut', 'cake', 'bottle']
         self.food_name = [13, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 44]
 
         self.object_publishers = {}
         self.object_labels = load_object_labels(PATH_TO_LABELS)
 
         self.tf_listener = TransformListener()
-#        rospy.Subscriber('/raspicam_node/image_raw', Image, self.camera_callback, queue_size=1, buff_size=2**24)
+        rospy.Subscriber('/raspicam_node/image_raw', Image, self.camera_callback, queue_size=1, buff_size=2**24)
         rospy.Subscriber('/camera_relay/image/compressed', CompressedImage, self.compressed_camera_callback, queue_size=1, buff_size=2**24)
         rospy.Subscriber('/camera_relay/camera_info', CameraInfo, self.camera_info_callback)
         rospy.Subscriber('/scan', LaserScan, self.laser_callback)
@@ -162,32 +160,29 @@ class Detector:
     def estimate_distance(self, thetaleft, thetaright, ranges):
         """ estimates the distance of an object in between two angles
         using lidar measurements """
-        offset = int(np.pi / self.laser_angle_increment)
 
-#        leftray_indx = min(max(0,int(thetaleft/self.laser_angle_increment)),len(ranges))
-#        rightray_indx = min(max(0,int(thetaright/self.laser_angle_increment)),len(ranges))
-        leftray_indx = (offset + min(max(0, int(thetaleft / self.laser_angle_increment)), offset * 2)) % (offset * 2)
-        rightray_indx = (offset + min(max(0, int(thetaright / self.laser_angle_increment)), offset * 2)) % (offset * 2)
-#        print(ranges.shape)
-#        print("leftIdx", leftray_indx)
-#        print("rightIdx", rightray_indx)
-
+        offset = int(np.pi/self.laser_angle_increment)
+        # add offset and wrap to number of points. laserscan should always have the same number of points. (2*offset = len(ranges))
+        # See https://github.com/StanfordASL/velodyne/blob/master/velodyne_laserscan/src/VelodyneLaserScan.cpp#L110
+        leftray_indx = (offset + min(max(0, int(thetaleft/self.laser_angle_increment)), offset * 2)) % (offset * 2)
+        rightray_indx = (offset + min(max(0, int(thetaright/self.laser_angle_increment)), offset * 2)) % (offset * 2)
 
         if leftray_indx<rightray_indx:
             meas = ranges[rightray_indx:] + ranges[:leftray_indx]
         else:
             meas = ranges[rightray_indx:leftray_indx]
 
-        num_m, dists = 0, []
+        num_m = 0
+        dists = []
         for m in meas:
             if m>0 and m<float('Inf'):
                 dists.append(m)
                 num_m += 1
 
         dists = np.sort(np.array(dists))
-        m = min(5, num_m)
-
+        m = min(10, num_m)
         return np.mean(dists[:m])
+
 
     def camera_callback(self, msg):
         """ callback for camera images """
@@ -218,22 +213,20 @@ class Detector:
         self.camera_common(img_laser_ranges, img, img_bgr8)
 
     def camera_common(self, img_laser_ranges, img, img_bgr8):
-#        print("entered cCommon")
         (img_h,img_w,img_c) = img.shape
 
         # runs object detection in the image
         (boxes, scores, classes, num) = self.run_detection(img)
 
-#        rospy.loginfo("Before if")
-#        print("Before if")
-
+        print('-'*30)
+        print('received image, detected', num, 'objects')
         if num > 0:
             # create list of detected objects
             detected_objects = DetectedObjectList()
-#            rospy.loginfo("IN if")
+
             # some objects were detected
             for (box,sc,cl) in zip(boxes, scores, classes):
-#                rospy.loginfo("IN for")
+                print(self.object_labels[cl])
                 if cl not in self.food_name:
                     continue
                 ymin = int(box[0]*img_h)
@@ -258,7 +251,6 @@ class Detector:
                     thetaright += 2.*math.pi
 
                 # estimate the corresponding distance using the lidar
-#                rospy.loginfo("Calling")
                 dist = self.estimate_distance(thetaleft,thetaright,img_laser_ranges)
 
                 if not self.object_publishers.has_key(cl):

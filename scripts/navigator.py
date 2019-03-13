@@ -17,11 +17,11 @@ import matplotlib.pyplot as plt
 
 # threshold at which navigator switches
 # from trajectory to pose control
-END_POS_THRESH = .2
+END_POS_THRESH = .35
 
 # threshold to be far enough into the plan
 # to recompute it
-START_POS_THRESH = .2
+START_POS_THRESH = .35
 
 # thereshold in theta to start moving forward when path following
 THETA_START_THRESH = 0.09
@@ -44,7 +44,7 @@ KDX = 1.5
 KDY = 1.5
 
 # smoothing condition (see splrep documentation)
-SMOOTH = .01
+SMOOTH = .005
 
 class Navigator:
 
@@ -89,12 +89,16 @@ class Navigator:
 
         rospy.Subscriber('/map', OccupancyGrid, self.map_callback)
         rospy.Subscriber('/map_metadata', MapMetaData, self.map_md_callback)
-        rospy.Subscriber('/cmd_nav', Pose2D, self.cmd_nav_callback)
+        rospy.Subscriber('/cmd_nav_supervisor', Pose2D, self.cmd_nav_callback)
+        self.tf = np.inf
 
     def cmd_nav_callback(self, data):
         self.x_g = data.x
         self.y_g = data.y
         self.theta_g = data.theta
+        
+        print("Recieved Goal Postion!" + str(self.x_g) + " and " + str(self.y_g))
+
         self.run_navigator()
 
     def map_md_callback(self, msg):
@@ -172,6 +176,7 @@ class Navigator:
 
             rospy.loginfo("Navigator: Computing navigation plan")
             if problem.solve():
+                rospy.loginfo("Enter problem.solve()")
                 if len(problem.path) > 3:
                     # cubic spline interpolation requires 4 points
                     self.current_plan = problem.path

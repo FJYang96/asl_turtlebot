@@ -4,6 +4,7 @@ import rospy
 from gazebo_msgs.msg import ModelStates
 from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
+from sensor_msgs.msg import Image, CameraInfo, LaserScan
 from asl_turtlebot.msg import DetectedObject, ObjectLocation
 import tf
 import math
@@ -11,24 +12,28 @@ from enum import Enum
 
 # if sim is True/using gazebo, therefore want to subscribe to /gazebo/model_states\
 # otherwise, they will use a TF lookup (hw2+)
-use_gazebo = rospy.get_param("sim")
+use_gazebo = False
 
 # if using gmapping, you will have a map frame. otherwise it will be odom frame
 mapping = rospy.get_param("map")
 
 
 # threshold at which we consider the robot at a location
-POS_EPS = .1
-THETA_EPS = .3
+POS_EPS = .2
+THETA_EPS = 1
+DIS_THRES = .3
 
 # time to stop at a stop sign
-STOP_TIME = 10
+STOP_TIME = 3
 
 # minimum distance from a stop sign to obey it
 STOP_MIN_DIST = .5
 
 # time taken to cross an intersection
 CROSSING_TIME = 3
+
+# minimum time for discovery
+DISCOVER_TIME = 7
 
 # state machine modes, not all implemented
 class Mode(Enum):
@@ -78,7 +83,7 @@ class Supervisor:
         # command pose for controller
         self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
         # nav pose for controller
-        self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
+        self.nav_goal_publisher = rospy.Publisher('/cmd_nav_supervisor', Pose2D, queue_size=10)
         # command vel (used for idling)
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
@@ -97,30 +102,44 @@ class Supervisor:
             rospy.Subscriber('/gazebo/model_states', ModelStates, self.gazebo_callback)
         # we can subscribe to nav goal click
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
-        
-        rospy.Subscriber('/delivery_request', string, self.delivery_request_callback)
+        # subscribe to requested food from TA
+        rospy.Subscriber('/delivery_request', String, self.delivery_request_callback)
         self.requested_food = []
+        self.deliver_finished = False
 
 #################################################################################################
         rospy.Subscriber('/food_location', ObjectLocation, self.update_food_location_callback)
         self.food_name = []
-        self.food_x = []
+        self.food_x= []
         self.food_y = []
 
         self.detect_status = False
-        # self.premode = Mode.IDLE
 
     def update_food_location_callback(self, msg):
       	if not self.discover_finished:
-          self.food_name = msg.name
-          self.food_x = msg.x
-          self.food_y = msg.y
+          self.food_name = list(msg.name)
+          self.food_x = list(msg.x)
+          self.food_y = list(msg.y)
 
     def delivery_request_callback(self, msg):
-        self.requested_food = msg.split(',')
+        if not self.discover_finished:
+            return
+
+        self.requested_food = str(msg.data).split(',')
+        self.requested_food.append('not in list')
+        print('Received Request', self.requested_food)
+
+        self.mode = Mode.DELI
+        print('entering deliver loop')
+        self.deliver_finished = False
+        while not self.deliver_loop():
+            print(self.x_g, self.y_g)
+            pass
+        print('deliver finished')
     
     def camera_info_callback(self, msg):
         self.focal_length = msg.K[4]
+
 ###############################################################################################
     def gazebo_callback(self, msg):
         pose = msg.pose[msg.name.index("turtlebot3_burger")]
@@ -137,6 +156,8 @@ class Supervisor:
 
     def rviz_goal_callback(self, msg):
         """ callback for a pose goal sent through rviz """
+        if self.discover_finished:
+            return
         origin_frame = "/map" if mapping else "/odom"
         print("rviz command received!")
         try:
@@ -167,7 +188,6 @@ class Supervisor:
 
         # distance of the stop sign
         # dist = msg.distance
-        
         dist = self.focal_length * 0.09 / (msg.corners[2]-msg.corners[0])
 
         # if close enough and in nav mode, stop
@@ -191,6 +211,7 @@ class Supervisor:
         nav_g_msg.x = self.x_g
         nav_g_msg.y = self.y_g
         nav_g_msg.theta = self.theta_g
+        print('In nav to pose:', self.x_g, self.y_g)
 
         self.nav_goal_publisher.publish(nav_g_msg)
 
@@ -213,8 +234,7 @@ class Supervisor:
         self.stop_sign_start = rospy.get_rostime()
         self.mode = Mode.STOP
         
-  	def init_food_stop(self):
-      	""" initiates a food stop manuever """
+    def init_food_stop(self):
         self.stop_sign_start = rospy.get_rostime()
         self.mode = Mode.PICK
 
@@ -235,9 +255,10 @@ class Supervisor:
         return (self.mode == Mode.CROSS and (rospy.get_rostime()-self.cross_start)>rospy.Duration.from_sec(CROSSING_TIME))
 
     def is_discover_finished(self):
-      	if (rospy.get_rostime() - self.start_time > rospy.Duration.from_sec(DISCOVER_TIME) and ((self.x - self.init_x)**2 + (self.y - self.init_y)**2)**0.5 < 0.1):
-      		self.discover_finished = True
-            self.mode = IDLE
+      	if (rospy.get_rostime() - self.start_time > rospy.Duration.from_sec(DISCOVER_TIME) and \
+            ((self.x - self.init_x)**2 + (self.y - self.init_y)**2)**0.5 < DIS_THRES):
+            self.discover_finished = True
+            self.mode = Mode.IDLE
             rospy.loginfo("Finish discover! Ready to start")
       
     def discover_loop(self):
@@ -264,6 +285,7 @@ class Supervisor:
         # checks wich mode it is in and acts accordingly
         if self.mode == Mode.IDLE:
             # send zero velocity
+            self.is_discover_finished()
             self.stay_idle()
 
         elif self.mode == Mode.POSE:
@@ -297,13 +319,27 @@ class Supervisor:
                 % str(self.mode))
             
     def set_goal_pose(self):
-      	if self.food_name[0] in self.requested_food:
-            self.x_g = self.food_x[0]
-            self.y_g = self.food_y[0]
+        this_food = 'not in list'
+        while(this_food not in self.food_name and len(self.requested_food) > 0):
+            this_food = self.requested_food.pop(0)
+            print('!!!!!!!!!!!!!!!', this_food)
+            print(this_food not in self.food_name)
+
+        print(this_food)
+        print(self.food_name)
+        if(len(self.requested_food) > 0):
+            food_ind = self.food_name.index(this_food)
+            self.x_g = self.food_x[food_ind]
+            self.y_g = self.food_y[food_ind]
             self.theta_g = 0.
-        self.food_x.pop(0)
-        self.food_y.pop(0)
-        self.food_name.pop(0)
+        else:
+            self.x_g = 0.0
+            self.y_g = 0.0
+            self.theta_g = 0.
+            self.deliver_finished = True
+        self.mode = Mode.NAV
+
+        print('Heading towards', this_food, 'at', self.x_g, self.y_g)
     
     def deliver_loop(self):
         """ the main loop of the robot. At each iteration, depending on its
@@ -330,6 +366,8 @@ class Supervisor:
         if self.mode == Mode.IDLE:
             # send zero velocity
             self.stay_idle()
+            if self.deliver_finished:
+                return True
 
         elif self.mode == Mode.POSE:
             # moving towards a desired pose
@@ -347,9 +385,11 @@ class Supervisor:
                 self.stay_idle()
                 
         elif self.mode == Mode.PICK:
-          	if self.has_stoppped():
+            if self.has_stopped():
               	self.mode = Mode.DELI
             else:
+                if self.deliver_finished:
+                    return True
               	self.stay_idle()
 
         elif self.mode == Mode.CROSS:
@@ -367,29 +407,28 @@ class Supervisor:
                 self.nav_to_pose()
                 
         elif self.mode == Mode.DELI:
-          	self.set_goal_pose()
+            self.set_goal_pose()
             self.mode = Mode.NAV
-            # self.premode = Mode.DELI
 
         else:
             raise Exception('This mode is not supported: %s'
                 % str(self.mode))
 
+        return False
+
     def run(self):
         rate = rospy.Rate(10) # 10 Hz
         while not rospy.is_shutdown():
-          	if self.is_discover_finished():
+            if self.discover_finished:
               	break
-            self.disover_loop()
+            self.discover_loop()
             rate.sleep()
             
-        self.mode = Mode.DELI
-        self.food_x.append(self.init_x)
-        self.food_y.append(self.init_y)
-            
         while not rospy.is_shutdown():
-          	while not ((self.x - self.food_x[-1])**2 + (self.y - self.food_y[-1])**2)**0.5 < 0.1:
-                self.deliver_loop()
+            # while rospy.get_rostime() - self.start_time < rospy.Duration.from_sec(30) and \
+            #     ((self.x - self.food_x[-1])**2 + (self.y - self.food_y[-1])**2)**0.5 > DIS_THRES:
+            #     print('entering deliver loop')
+            #     self.deliver_loop()
                 rate.sleep()
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@
 
 import rospy
 from gazebo_msgs.msg import ModelStates
-from geometry_msgs.msg import Twist, PoseArray, Pose2D
+from geometry_msgs.msg import Twist, PoseArray, Pose2D, PointStamped
 from std_msgs.msg import Float32MultiArray, String
 import tf
 import numpy as np
@@ -19,7 +19,7 @@ K3 = 0.8
 TIMEOUT = np.inf
 
 # maximum velocity
-V_MAX = 0.2
+V_MAX = 0.5
 
 # maximim angular velocity
 W_MAX = 1
@@ -66,6 +66,8 @@ class PoseController:
         # calls cmd_pose_callback. It should subscribe to '/cmd_pose'
 
         rospy.Subscriber('/cmd_pose', Pose2D, self.cmd_pose_callback)
+        # rospy.Subscriber('/cmd_nav', Pose2D, self.cmd_pose_callback)
+        rospy.Subscriber("/detected_points", PointStamped, self.rrt_pose_callback)
 
         ######### END OF YOUR CODE ##########
 
@@ -83,6 +85,15 @@ class PoseController:
             euler = tf.transformations.euler_from_quaternion(quaternion)
             self.theta = euler[2]
 
+    def rrt_pose_callback(self, data):
+        ######### YOUR CODE HERE ############
+        # fill out cmd_pose_callback
+        self.x_g = data.point.x
+        self.y_g = data.point.y
+        self.theta_g = 0.0
+        ######### END OF YOUR CODE ##########
+        self.cmd_pose_time = rospy.get_rostime()
+
     def cmd_pose_callback(self, data):
         ######### YOUR CODE HERE ############
         # fill out cmd_pose_callback
@@ -91,7 +102,7 @@ class PoseController:
         self.theta_g = data.theta
         ######### END OF YOUR CODE ##########
         self.cmd_pose_time = rospy.get_rostime()
-
+        print("goal received")
 
     def get_ctrl_output(self):
         if self.x_g is None:
@@ -165,6 +176,7 @@ class PoseController:
             ctrl_output = self.get_ctrl_output()
             if ctrl_output is not None:
                 self.pub.publish(ctrl_output)
+                print("control published")
             rate.sleep()
 
 if __name__ == '__main__':

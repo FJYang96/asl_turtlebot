@@ -4,11 +4,11 @@ import rospy
 import math
 import numpy as np
 import tf
-from visualization_msgs.msg import Marker, MarkerArray
+from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Quaternion, Pose, Point, Pose2D, PoseStamped
-from sensor_msgs.msg import CompressedImage, Image, CameraInfo, LaserScan
+from sensor_msgs.msg import CompressedImage, Image, CameraInfo
 from asl_turtlebot.msg import DetectedObjectList
-from std_msgs.msg import Header, ColorRGBA, Float32MultiArray
+from std_msgs.msg import Header, Float32MultiArray
 
 mapping = rospy.get_param("map")
 
