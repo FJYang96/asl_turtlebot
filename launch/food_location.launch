@@ -1,0 +1,8 @@
+<launch>
+  <rosparam param="sim">false</rosparam>
+  <rosparam param="map">true</rosparam>
+  
+  <node pkg="asl_turtlebot" type="food_points.py" name="food_location" />
+  <node pkg="asl_turtlebot" type="location_marker.py" name="food_location_marker" />
+
+</launch>
