@@ -17,11 +17,11 @@ import matplotlib.pyplot as plt
 
 # threshold at which navigator switches
 # from trajectory to pose control
-END_POS_THRESH = .35
+END_POS_THRESH = .2
 
 # threshold to be far enough into the plan
 # to recompute it
-START_POS_THRESH = .35
+START_POS_THRESH = .2
 
 # thereshold in theta to start moving forward when path following
 THETA_START_THRESH = 0.09
@@ -29,10 +29,10 @@ THETA_START_THRESH = 0.09
 THETA_START_P = 1
 
 # maximum velocity
-V_MAX = .2
+V_MAX = .1
 
 # maximim angular velocity
-W_MAX = .4
+W_MAX = .2
 
 # desired crusing velocity
 V_DES = 0.12
@@ -44,7 +44,7 @@ KDX = 1.5
 KDY = 1.5
 
 # smoothing condition (see splrep documentation)
-SMOOTH = .005
+SMOOTH = .01
 
 class Navigator:
 
@@ -89,7 +89,8 @@ class Navigator:
 
         rospy.Subscriber('/map', OccupancyGrid, self.map_callback)
         rospy.Subscriber('/map_metadata', MapMetaData, self.map_md_callback)
-        rospy.Subscriber('/cmd_nav_supervisor', Pose2D, self.cmd_nav_callback)
+        rospy.Subscriber('/cmd_nav', Pose2D, self.cmd_nav_callback)
+        
         self.tf = np.inf
 
     def cmd_nav_callback(self, data):
@@ -174,7 +175,7 @@ class Navigator:
             x_goal = self.snap_to_grid((self.x_g, self.y_g))
             problem = AStar(state_min,state_max,x_init,x_goal,self.occupancy,self.plan_resolution)
 
-            rospy.loginfo("Navigator: Computing navigation plan")
+            rospy.loginfo("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Navigator: Computing navigation plan!!!!!!!!!!!!")
             if problem.solve():
                 rospy.loginfo("Enter problem.solve()")
                 if len(problem.path) > 3:
@@ -226,6 +227,7 @@ class Navigator:
 
         # if we have a path, execute it (we need at least 3 points for this controller)
         if len(self.current_plan) > 3:
+            print("At least 3 points")
 
             # if currently not moving, first line up with the plan
             if self.V_prev == 0:
@@ -242,6 +244,7 @@ class Navigator:
             t = (rospy.get_rostime()-self.current_plan_start_time).to_sec()
             t = max(0.0, t)
             t = min(t, self.path_tf)
+            print(t)
 
             x_d = scipy.interpolate.splev(t, self.path_x_spline, der=0)
             y_d = scipy.interpolate.splev(t, self.path_y_spline, der=0)
@@ -264,6 +267,7 @@ class Navigator:
             self.nav_pathsp_pub.publish(pathsp_msg)
 
             if self.V_prev <= 0.0001:
+                print('previous velocity is very small')
                 self.V_prev = linalg.norm([xd_d, yd_d])
 
             dt = (rospy.get_rostime()-self.V_prev_t).to_sec()
@@ -284,6 +288,7 @@ class Navigator:
         elif len(self.current_plan) > 0:
             # using the pose controller for paths too short
             # just send the next point
+            print("Path too short, going to use pose_controller")
             pose_g_msg = Pose2D()
             pose_g_msg.x = self.current_plan[0][0]
             pose_g_msg.y = self.current_plan[0][1]
@@ -306,6 +311,7 @@ class Navigator:
         cmd_msg.linear.x = cmd_x_dot
         cmd_msg.angular.z = cmd_theta_dot
         self.nav_vel_pub.publish(cmd_msg)
+        print('Publishing velocity', cmd_msg)
 
 
 if __name__ == '__main__':

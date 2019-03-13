@@ -127,7 +127,7 @@ class AStar(object):
     # INPUT: None
     # OUTPUT: Boolean, True if a solution from x_init to x_goal was found
     def solve(self):
-        print('enter')
+        print('Astar from' + str(self.x_init) + 'to' + str(self.x_goal))
         while len(self.open_set)>0:
             x_current = self.find_best_f_score()
             if x_current == self.x_goal:
@@ -140,14 +140,14 @@ class AStar(object):
                     continue
                 
                 tent_g_score = self.g_score[x_current] + self.distance(x_current, x_neigh)
-                if x_neigh not in self.open_set:
+                if x_neigh not in self.open_set and x_neigh not in self.closed_set:
                     self.open_set.append(x_neigh)
                 elif tent_g_score > self.g_score[x_neigh]:
                     continue
                 self.came_from[x_neigh] = x_current
                 self.g_score[x_neigh] = tent_g_score
                 self.f_score[x_neigh] = tent_g_score + self.distance(x_neigh, self.x_goal)
-        print('leave')
+        print('left astar')
         return False
 
 # A 2D state space grid with a set of rectangular obstacles. The grid is fully deterministic

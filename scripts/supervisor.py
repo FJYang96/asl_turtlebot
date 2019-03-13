@@ -19,7 +19,7 @@ mapping = rospy.get_param("map")
 
 
 # threshold at which we consider the robot at a location
-POS_EPS = .2
+POS_EPS = .15
 THETA_EPS = 1
 DIS_THRES = .3
 
@@ -33,7 +33,7 @@ STOP_MIN_DIST = .5
 CROSSING_TIME = 3
 
 # minimum time for discovery
-DISCOVER_TIME = 7
+DISCOVER_TIME = 60
 
 # state machine modes, not all implemented
 class Mode(Enum):
@@ -211,7 +211,7 @@ class Supervisor:
         nav_g_msg.x = self.x_g
         nav_g_msg.y = self.y_g
         nav_g_msg.theta = self.theta_g
-        print('In nav to pose:', self.x_g, self.y_g)
+        #print('In nav to pose:', self.x_g, self.y_g)
 
         self.nav_goal_publisher.publish(nav_g_msg)
 
@@ -322,11 +322,7 @@ class Supervisor:
         this_food = 'not in list'
         while(this_food not in self.food_name and len(self.requested_food) > 0):
             this_food = self.requested_food.pop(0)
-            print('!!!!!!!!!!!!!!!', this_food)
-            print(this_food not in self.food_name)
 
-        print(this_food)
-        print(self.food_name)
         if(len(self.requested_food) > 0):
             food_ind = self.food_name.index(this_food)
             self.x_g = self.food_x[food_ind]
@@ -371,7 +367,7 @@ class Supervisor:
 
         elif self.mode == Mode.POSE:
             # moving towards a desired pose
-            if self.close_to(self.x_g,self.y_g,self.theta_g):
+            if (abs(x-self.x)<0.5 and abs(y-self.y)<0.5 and abs(theta-self.theta)<1.5):
                 self.mode = Mode.IDLE
                 self.init_food_stop()
             else:

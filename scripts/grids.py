@@ -42,6 +42,7 @@ class StochOccupancyGrid2D(object):
         self.probs = probs
         self.window_size = window_size
         self.thresh = thresh
+        self.MARGIN = 0.02
 
     def snap_to_grid(self, x):
         return (self.resolution*round(x[0]/self.resolution), self.resolution*round(x[1]/self.resolution))
@@ -57,7 +58,7 @@ class StochOccupancyGrid2D(object):
                 x, y = self.snap_to_grid([state[0] + dx * self.resolution, state[1] + dy * self.resolution])
                 grid_x = int((x - self.origin_x) / self.resolution)
                 grid_y = int((y - self.origin_y) / self.resolution)
-                if grid_y>0 and grid_x>0 and grid_x<self.width and grid_y<self.height:
+                if grid_y>0 + self.MARGIN and grid_x>0 + self.MARGIN and grid_x<self.width- self.MARGIN and grid_y<self.height - self.MARGIN:
                     p_total *= (1.0-max(0.0,float(self.probs[grid_y * self.width + grid_x])/100.0))
         return (1.0-p_total) < self.thresh
 

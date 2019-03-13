@@ -16,13 +16,14 @@ K3 = 0.8
 
 # tells the robot to stay still
 # if it doesn't get messages within that time period
-TIMEOUT = np.inf
+#TIMEOUT = np.inf
+TIMEOUT = 10
 
 # maximum velocity
-V_MAX = 0.5
+V_MAX = 0.2
 
 # maximim angular velocity
-W_MAX = 1
+W_MAX = 0.7
 
 # if sim is True/using gazebo, therefore want to subscribe to /gazebo/model_states\
 # otherwise, they will use a TF lookup (hw2+)
@@ -67,7 +68,6 @@ class PoseController:
 
         rospy.Subscriber('/cmd_pose', Pose2D, self.cmd_pose_callback)
         # rospy.Subscriber('/cmd_nav', Pose2D, self.cmd_pose_callback)
-        rospy.Subscriber("/detected_points", PointStamped, self.rrt_pose_callback)
 
         ######### END OF YOUR CODE ##########
 
@@ -85,14 +85,6 @@ class PoseController:
             euler = tf.transformations.euler_from_quaternion(quaternion)
             self.theta = euler[2]
 
-    def rrt_pose_callback(self, data):
-        ######### YOUR CODE HERE ############
-        # fill out cmd_pose_callback
-        self.x_g = data.point.x
-        self.y_g = data.point.y
-        self.theta_g = 0.0
-        ######### END OF YOUR CODE ##########
-        self.cmd_pose_time = rospy.get_rostime()
 
     def cmd_pose_callback(self, data):
         ######### YOUR CODE HERE ############
@@ -135,7 +127,7 @@ class PoseController:
             th_rot = self.theta-self.theta_g 
             rho = linalg.norm(rel_coords) 
 
-            if (rho < 0.03) & (th_rot < 0.08):
+            if (rho < 0.1) and (th_rot < 0.2):
                 rospy.loginfo("Close to goal: commanding zero controls")
                 self.x_g = None
                 self.y_g = None

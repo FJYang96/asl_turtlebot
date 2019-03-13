@@ -71,6 +71,7 @@ class PuddleViz:
         '''
         lidar_info = pc2.read_points(msg, skip_nans=True, field_names=("x", "y", "z"))
         num_points = len(list(lidar_info))
+        print(num_points)
         lidar_info = pc2.read_points(msg, skip_nans=True, field_names=("x", "y", "z"))
         x_coords = np.zeros(num_points)
         y_coords = np.zeros(num_points)
