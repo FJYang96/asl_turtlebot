@@ -94,3 +94,7 @@ To test Turtlebot with stop sign detection/stopping: first run `supervisor.py`, 
 supervisor.py line 68 we need to use `"/cmd_nav"`<br/>
 nav: higher level navigation/motion planning <br/>
 pose: path tracker/follower <br/>
+
+For final demo, to run the robot:<br/>
+1. Open up two `ssh` terminals: `bring_up_jetson` and `roslaunch project_nav`<br/>
+2. Locally: run `rviz`, `supervisor.py` and `food_location`
